@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>String Tension Calculator</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+                    },
+                    colors: {
+                        dark: {
+                            900: '#0f172a', 
+                            800: '#1e293b', 
+                            700: '#334155', 
+                        },
+                        brand: {
+                            400: '#34d399', 
+                            500: '#10b981',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        
+        .select-dark {
+            background-color: #0f172a; border: 1px solid #334155; color: #f8fafc;
+            padding: 0.5rem; border-radius: 0.375rem; outline: none; cursor: pointer;
+        }
+        .select-dark:focus { border-color: #34d399; }
+        .input-dark {
+            background-color: #0f172a; border: 1px solid #334155; color: #f8fafc;
+            padding: 0.5rem; border-radius: 0.375rem; outline: none; width: 100%;
+        }
+        .input-dark:focus { border-color: #34d399; }
+        
+        /* Toggle Switch Styling */
+        .toggle-checkbox:checked {
+            right: 0; border-color: #34d399;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #34d399;
+        }
+        .toggle-checkbox:disabled + .toggle-label {
+            opacity: 0.4; cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const E_STEEL = 29000000; // Young's Modulus for high-carbon steel (psi)
+        const STEEL_DENSITY = 0.2833; // Steel density (lbs/in^3)
+        const LBS_TO_KG = 0.453592;
+        const NON_VIBRATING_LENGTH = 3.0; // Hidden string length behind nut/bridge in inches
+
+        // --- ВЫНЕСЕННЫЕ ПОРОГОВЫЕ ЗНАЧЕНИЯ ДЛЯ ЦВЕТОВОЙ ИНДИКАЦИИ (THRESHOLDS) ---
+        // Вы можете менять эти значения на основе вашего опыта.
+        const THRESHOLDS = {
+            TENSION: {
+                TOO_LOOSE_KG: 4.5,    // Ниже этого значения натяжение критически слабое (красный)
+                LOOSE_KG: 5.8,        // Ниже этого - комфортно, но слабовато (желтый)
+                TIGHT_KG: 16.0,       // Выше этого - жестко (желтый)
+                TOO_TIGHT_KG: 20.0    // Выше этого - перетяг, может порваться (красный)
+            },
+            BEND: {
+                COMFORTABLE_KG: 1.4,  // До этого значения тянуть легко
+                HARD_KG: 1.9,         // После этого - ощутимое сопротивление (оранжевый)
+                EXTREME_KG: 2.7       // Физический предел для пальцев (красный)
+            },
+            ACTION: {
+                FLOPPY_TENSION_KG: 5.5, // Порог натяжения, при котором струна проваливается в лады (Floppy)
+                STIFF_ACTION_KG: 0.45   // Порог жесткости продавливания (оранжевый)
+            }
+        };
+
+        // Precise Unit Weight Table (lbs/linear inch) - Extended to massive bass gauges (.105)
+        const NW_UNIT_WEIGHTS = {
+            0.017: 0.0000545, 0.018: 0.0000628, 0.019: 0.0000705, 0.020: 0.0000762,
+            0.021: 0.0000830, 0.022: 0.0000914, 0.024: 0.0001083, 0.026: 0.0001267,
+            0.028: 0.0001477, 0.030: 0.0001700, 0.032: 0.0001944, 0.034: 0.0002164,
+            0.036: 0.0002395, 0.038: 0.0002660, 0.040: 0.0002930, 0.042: 0.0003204,
+            0.044: 0.0003507, 0.045: 0.0003664, 0.046: 0.0003821, 0.048: 0.0004144, 
+            0.050: 0.0004500, 0.052: 0.0004862, 0.054: 0.0005256, 0.056: 0.0005652, 
+            0.058: 0.0006050, 0.059: 0.0006275, 0.060: 0.0006497, 0.062: 0.0006886, 
+            0.064: 0.0007357, 0.065: 0.0007604, 0.066: 0.0007835, 0.068: 0.0008331, 
+            0.070: 0.0008851, 0.072: 0.0009384, 0.074: 0.0009903, 0.080: 0.0011603, 
+            0.085: 0.0013061, 0.090: 0.0014900, 0.095: 0.0016400, 0.100: 0.0018244,
+            0.105: 0.0020120
+        };
+
+        const PLAIN_GAUGES = [0.008, 0.0085, 0.009, 0.0095, 0.010, 0.0105, 0.011, 0.0115, 0.012, 0.013, 0.014, 0.015, 0.016, 0.017, 0.018, 0.019, 0.020, 0.022, 0.024, 0.026];
+        const WOUND_GAUGES = Object.keys(NW_UNIT_WEIGHTS).map(Number);
+        const OVERLAP_GAUGES = [0.017, 0.018, 0.019, 0.020, 0.021, 0.022, 0.024, 0.026];
+
+        const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const A4_MIDI_NUMBER = 69; // MIDI-стандарт: Нота A4 (Ля первой октавы) = индекс 69
+        const A4_FREQUENCY = 440;  // Частота ноты A4 = 440 Гц
+        
+        // Переводит читаемую ноту (например "E4") в математический индекс MIDI
+        const parseNoteToMidi = (noteStr) => {
+            const match = noteStr.match(/^([A-G]#?)(-?\d+)$/);
+            if (!match) return 0;
+            const noteIndex = NOTE_NAMES.indexOf(match[1]);
+            const octave = parseInt(match[2]);
+            return (octave + 1) * 12 + noteIndex;
+        };
+
+        const DEFAULT_TUNINGS = {
+            "6-String: E Standard": ["E4", "B3", "G3", "D3", "A2", "E2"],
+            "6-String: Drop D": ["E4", "B3", "G3", "D3", "A2", "D2"],
+            "6-String: Drop C": ["D4", "A3", "F3", "C3", "G2", "C2"],
+            "6-String: Drop B": ["C#4", "G#3", "E3", "B2", "F#2", "B1"],
+            "6-String: Open G": ["D4", "B3", "G3", "D3", "G2", "D2"],
+            "6-String: Drop F": ["G3", "D3", "A#2", "F2", "C2", "F1"],
+            "6-String: Drop E": ["F#3", "C#3", "A2", "E2", "B1", "E1"],
+            "6-String: Drop D Octave Lower": ["E3", "B2", "G2", "D2", "A1", "D1"],
+            
+            "7-String: B Standard": ["E4", "B3", "G3", "D3", "A2", "E2", "B1"],
+            "7-String: Drop A": ["E4", "B3", "G3", "D3", "A2", "E2", "A1"],
+            "7-String: Double Drop A+D": ["E4", "B3", "G3", "D3", "A2", "D2", "A1"],
+            "7-String: Drop G": ["D4", "A3", "F3", "C3", "G2", "D2", "G1"],
+
+            "Loathe: E1 Baritone (E-A-E-A-D-F#)": ["F#3", "D3", "A2", "E2", "A1", "E1"],
+            "Loathe: C#1 Drop (C#-A-E-A-D-F#)": ["F#3", "D3", "A2", "E2", "A1", "C#1"],
+            "Loathe: Ab1 Drop (Ab-Db-Ab-Db-Gb-Bb)": ["A#3", "F#3", "C#3", "G#2", "C#2", "G#1"],
+            "Loathe: A1 Drop (A-D-A-D-G-B)": ["B3", "G3", "D3", "A2", "D2", "A1"],
+            "Loathe: B0 Sub (B0-A-E-A-D-F#)": ["F#3", "D3", "A2", "E2", "A1", "B0"],
+            "Loathe: E1 7-String (E-G#-D#-G#-C#-F-A#)": ["A#3", "F3", "C#3", "G#2", "D#2", "G#1", "E1"]
+        };
+
+        const DEFAULT_GAUGES = {
+            "Light Set (8-38)": [{g:0.008,w:false}, {g:0.011,w:false}, {g:0.014,w:false}, {g:0.022,w:true}, {g:0.030,w:true}, {g:0.038,w:true}],
+            "Hybrid Slinky (9-46)": [{g:0.009,w:false}, {g:0.011,w:false}, {g:0.016,w:false}, {g:0.026,w:true}, {g:0.036,w:true}, {g:0.046,w:true}],
+            "8-String Standard (9-80)": [{g:0.009,w:false}, {g:0.011,w:false}, {g:0.016,w:false}, {g:0.024,w:true}, {g:0.034,w:true}, {g:0.046,w:true}, {g:0.064,w:true}, {g:0.080,w:true}],
+            "Skinny Top Heavy Bottom Slinky (10-52)": [{g:0.010,w:false}, {g:0.013,w:false}, {g:0.017,w:false}, {g:0.030,w:true}, {g:0.042,w:true}, {g:0.052,w:true}],
+            "Skinny Top Heavy Bottom (10-54)": [{g:0.010,w:false}, {g:0.013,w:false}, {g:0.017,w:false}, {g:0.030,w:true}, {g:0.042,w:true}, {g:0.054,w:true}],
+            "Zakk Wylde Signature Boomers (10-60)": [{g:0.010,w:false}, {g:0.013,w:false}, {g:0.017,w:false}, {g:0.036,w:true}, {g:0.052,w:true}, {g:0.060,w:true}],
+            "Beefy Slinky (11-54)": [{g:0.011,w:false}, {g:0.015,w:false}, {g:0.022,w:false}, {g:0.030,w:true}, {g:0.042,w:true}, {g:0.054,w:true}],
+            "Michael Amott Signature (11-59)": [{g:0.011,w:false}, {g:0.015,w:false}, {g:0.018,w:false}, {g:0.032,w:true}, {g:0.044,w:true}, {g:0.059,w:true}],
+            "Pi Stoffers Signature (11-70)": [{g:0.011,w:false}, {g:0.015,w:false}, {g:0.020,w:false}, {g:0.036,w:true}, {g:0.052,w:true}, {g:0.070,w:true}],
+            "8-String Heavy Set (11-105)": [{g:0.011,w:false}, {g:0.016,w:false}, {g:0.024,w:false}, {g:0.034,w:true}, {g:0.046,w:true}, {g:0.064,w:true}, {g:0.080,w:true}, {g:0.105,w:true}],
+            "Not Even Slinky (12-56)": [{g:0.012,w:false}, {g:0.016,w:false}, {g:0.024,w:false}, {g:0.032,w:true}, {g:0.044,w:true}, {g:0.056,w:true}],
+            "Mammoth Slinky (12-62)": [{g:0.012,w:false}, {g:0.016,w:false}, {g:0.024,w:true}, {g:0.034,w:true}, {g:0.048,w:true}, {g:0.062,w:true}],
+            "Not Even Slinky 7-String (12-74)": [{g:0.012,w:false}, {g:0.016,w:false}, {g:0.024,w:false}, {g:0.032,w:true}, {g:0.044,w:true}, {g:0.056,w:true}, {g:0.074,w:true}],
+            "La Bella Drop Tune (13-70)": [{g:0.013,w:false}, {g:0.017,w:false}, {g:0.026,w:true}, {g:0.042,w:true}, {g:0.054,w:true}, {g:0.070,w:true}],
+            "La Bella Baritone Light (14-70)": [{g:0.014,w:false}, {g:0.018,w:false}, {g:0.028,w:true}, {g:0.040,w:true}, {g:0.050,w:true}, {g:0.070,w:true}],
+            "Baritone Electric (15-80)": [{g:0.015,w:false}, {g:0.019,w:false}, {g:0.030,w:true}, {g:0.044,w:true}, {g:0.056,w:true}, {g:0.080,w:true}],
+            "6-String Bass VI (20-90)": [{g:0.020,w:true}, {g:0.030,w:true}, {g:0.042,w:true}, {g:0.054,w:true}, {g:0.074,w:true}, {g:0.090,w:true}],
+            "7-String Bass Set (22-105)": [{g:0.022,w:true}, {g:0.030,w:true}, {g:0.038,w:true}, {g:0.045,w:true}, {g:0.065,w:true}, {g:0.085,w:true}, {g:0.105,w:true}]
+        };
+
+        // Sorting Gauges by total thickness for optimal UI display
+        const sortGauges = (presetsObj) => {
+            return Object.entries(presetsObj).sort((a, b) => {
+                const sumA = a[1].reduce((acc, curr) => acc + curr.g, 0);
+                const sumB = b[1].reduce((acc, curr) => acc + curr.g, 0);
+                return sumA - sumB;
+            });
+        };
+
+        // Формула перевода MIDI в частоту. Берем эталон A4 (индекс 69) = 440 Гц
+        const midiToFreq = (midi) => A4_FREQUENCY * Math.pow(2, (midi - A4_MIDI_NUMBER) / 12);
+        
+        const getWoundUnitWeight = (gauge) => {
+            if (NW_UNIT_WEIGHTS[gauge]) return NW_UNIT_WEIGHTS[gauge];
+            
+            const gauges = Object.keys(NW_UNIT_WEIGHTS).map(Number).sort((a,b)=>a-b);
+            if (gauge < gauges[0]) return NW_UNIT_WEIGHTS[gauges[0]] * Math.pow(gauge/gauges[0], 2); 
+            if (gauge > gauges[gauges.length-1]) return NW_UNIT_WEIGHTS[gauges[gauges.length-1]] * Math.pow(gauge/gauges[gauges.length-1], 2); 
+            
+            for (let i = 0; i < gauges.length - 1; i++) {
+                if (gauge > gauges[i] && gauge < gauges[i+1]) {
+                    const g1 = gauges[i];
+                    const g2 = gauges[i+1];
+                    const ratio = (gauge - g1) / (g2 - g1);
+                    return NW_UNIT_WEIGHTS[g1] + ratio * (NW_UNIT_WEIGHTS[g2] - NW_UNIT_WEIGHTS[g1]);
+                }
+            }
+            return 0; 
+        };
+
+        // Format to standard thousands string notation (e.g. 0.010 -> 10, 0.105 -> 105, 0.0095 -> 9.5)
+        const formatGauge = (g) => {
+            return parseFloat((g * 1000).toFixed(1)).toString();
+        };
+
+        const calculateStringPhysics = (midi, gauge, isWound, scaleLength) => {
+            let unitWeight = 0;
+            if (!isWound) {
+                unitWeight = Math.PI * Math.pow(gauge / 2, 2) * STEEL_DENSITY;
+            } else {
+                unitWeight = getWoundUnitWeight(gauge);
+            }
+
+            let freq = midiToFreq(midi);
+            let tensionLbs = (unitWeight * Math.pow(2 * scaleLength * freq, 2)) / 386.4;
+
+            // Core Wire calculation logic
+            let coreRatio = 1.0;
+            if (isWound) {
+                if (gauge <= 0.024) coreRatio = 0.50;      // Thin wound strings
+                else if (gauge <= 0.036) coreRatio = 0.45; // Medium
+                else if (gauge <= 0.054) coreRatio = 0.40; // Heavy
+                else coreRatio = 0.35;                     // Very heavy (double wound)
+            }
+            let d_core = gauge * coreRatio;
+            let area_core = Math.PI * Math.pow(d_core / 2, 2);
+
+            let x1 = scaleLength / 17.817; 
+            let xp = x1 / 2; 
+            let h = 0.03937; // 1mm in inches
+            
+            let L_pressed = Math.sqrt(xp*xp + h*h) + Math.sqrt((scaleLength-xp)*(scaleLength-xp) + h*h);
+            let delta_L_action = L_pressed - scaleLength;
+            let delta_T_action = (E_STEEL * area_core / scaleLength) * delta_L_action;
+            
+            let totalTensionAction = tensionLbs + delta_T_action;
+            let actionForceLbs = totalTensionAction * (h / xp + h / (scaleLength - xp));
+
+            // Bend Force calculation (1 whole step up)
+            let r_bend = Math.pow(2, 2/12); 
+            let targetTension = tensionLbs * Math.pow(r_bend, 2);
+            let deltaTensionBend = targetTension - tensionLbs;
+            
+            let totalPhysicalLength = scaleLength + NON_VIBRATING_LENGTH;
+            let delta_L_bend = (deltaTensionBend * totalPhysicalLength) / (E_STEEL * area_core);
+            
+            let d_transverse = Math.sqrt((delta_L_bend * scaleLength) / 2);
+            let bendForceLbs = 4 * targetTension * (d_transverse / scaleLength);
+
+            return {
+                tensionLbs,
+                tensionKg: tensionLbs * LBS_TO_KG,
+                actionLbs: actionForceLbs,
+                actionKg: actionForceLbs * LBS_TO_KG,
+                bendLbs: bendForceLbs,
+                bendKg: bendForceLbs * LBS_TO_KG
+            };
+        };
+
+        const InfoIcon = ({ tooltip }) => (
+            <div className="relative group inline-block ml-1 cursor-pointer align-middle">
+                <svg className="w-4 h-4 text-slate-400 group-hover:text-brand-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 p-3 bg-slate-800 text-xs text-slate-200 rounded shadow-xl border border-slate-600 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 text-center font-normal leading-relaxed">
+                    {tooltip}
+                </div>
+            </div>
+        );
+
+        const App = () => {
+            const [stringCount, setStringCount] = React.useState(7);
+            const [isMultiscale, setIsMultiscale] = React.useState(true);
+            const [scaleTreble, setScaleTreble] = React.useState(25.5);
+            const [scaleBass, setScaleBass] = React.useState(27.0);
+            
+            const [pitchShift, setPitchShift] = React.useState(0);
+            const [strings, setStrings] = React.useState([]);
+
+            // Selected Presets State
+            const [activeTuningPreset, setActiveTuningPreset] = React.useState("");
+            const [activeGaugePreset, setActiveGaugePreset] = React.useState("");
+
+            // LocalStorage for custom presets
+            const [customTunings, setCustomTunings] = React.useState(() => JSON.parse(localStorage.getItem('customTunings') || '{}'));
+            const [customGauges, setCustomGauges] = React.useState(() => JSON.parse(localStorage.getItem('customGauges') || '{}'));
+
+            const [isSavingTuning, setIsSavingTuning] = React.useState(false);
+            const [newTuningName, setNewTuningName] = React.useState('');
+
+            const [isSavingGauge, setIsSavingGauge] = React.useState(false);
+            const [newGaugeName, setNewGaugeName] = React.useState('');
+
+            React.useEffect(() => {
+                applyPreset("7-String: Drop A", "Skinny Top Heavy Bottom Slinky (10-52)", 7);
+            }, []);
+
+            const allTunings = { ...customTunings, ...DEFAULT_TUNINGS };
+            const allGauges = { ...customGauges, ...DEFAULT_GAUGES };
+            const sortedGaugePresets = sortGauges(allGauges);
+
+            const applyPreset = (tuningName, gaugeName, count) => {
+                const tunings = allTunings[tuningName];
+                const gauges = allGauges[gaugeName];
+                
+                let newStrings = [];
+                for(let i = 0; i < count; i++) {
+                    // Если значение из пресета является строкой (например "E4"), переводим в MIDI
+                    let parsedMidi = tunings && tunings[i] ? (typeof tunings[i] === 'string' ? parseNoteToMidi(tunings[i]) : tunings[i]) : null;
+                    let m = parsedMidi !== null ? parsedMidi : (64 - i*5); 
+                    
+                    let g = gauges ? gauges[i] : { g: 0.010 + i*0.010, w: i > 2 };
+                    
+                    newStrings.push({
+                        baseMidi: m,
+                        gauge: g?.g || 0.054,
+                        isWound: g?.w !== undefined ? g.w : true
+                    });
+                }
+                setStrings(newStrings);
+                setStringCount(count);
+                setPitchShift(0); 
+                if (tuningName) setActiveTuningPreset(tuningName);
+                if (gaugeName) setActiveGaugePreset(gaugeName);
+            };
+
+            const saveCustomTuning = () => {
+                if(!newTuningName.trim()) return;
+                const arr = strings.map(s => s.baseMidi + pitchShift);
+                const updated = { ...customTunings, [newTuningName]: arr };
+                setCustomTunings(updated);
+                localStorage.setItem('customTunings', JSON.stringify(updated));
+                setIsSavingTuning(false);
+                setNewTuningName('');
+                setActiveTuningPreset(newTuningName);
+            };
+
+            const saveCustomGauge = () => {
+                if(!newGaugeName.trim()) return;
+                const arr = strings.map(s => ({ g: s.gauge, w: s.isWound }));
+                const updated = { ...customGauges, [newGaugeName]: arr };
+                setCustomGauges(updated);
+                localStorage.setItem('customGauges', JSON.stringify(updated));
+                setIsSavingGauge(false);
+                setNewGaugeName('');
+                setActiveGaugePreset(newGaugeName);
+            };
+
+            const getScaleForString = (index, total) => {
+                if (!isMultiscale) return scaleTreble;
+                if (total <= 1) return scaleTreble;
+                return scaleTreble + (index / (total - 1)) * (scaleBass - scaleTreble);
+            };
+
+            const handleStringChange = (index, field, value) => {
+                const newStrings = [...strings];
+                newStrings[index][field] = value;
+                setStrings(newStrings);
+                if (field === 'baseMidi') setActiveTuningPreset("Custom");
+                if (field === 'gauge' || field === 'isWound') setActiveGaugePreset("Custom");
+            };
+
+            const getTensionColor = (kg) => {
+                if (kg < THRESHOLDS.TENSION.TOO_LOOSE_KG || kg > THRESHOLDS.TENSION.TOO_TIGHT_KG) return 'text-red-500 font-bold'; 
+                if (kg < THRESHOLDS.TENSION.LOOSE_KG || kg > THRESHOLDS.TENSION.TIGHT_KG) return 'text-yellow-400 font-semibold'; 
+                return 'text-brand-400 font-semibold'; 
+            };
+
+            const getBendColor = (kg) => {
+                if (kg > THRESHOLDS.BEND.EXTREME_KG) return 'text-red-500 font-bold'; 
+                if (kg > THRESHOLDS.BEND.HARD_KG) return 'text-orange-400 font-semibold'; 
+                if (kg > THRESHOLDS.BEND.COMFORTABLE_KG) return 'text-yellow-400'; 
+                return 'text-blue-300'; 
+            };
+
+            const getActionColor = (actionKg, tensionKg) => {
+                if (tensionKg < THRESHOLDS.ACTION.FLOPPY_TENSION_KG) return 'text-yellow-500 font-semibold'; 
+                if (actionKg > THRESHOLDS.ACTION.STIFF_ACTION_KG) return 'text-orange-400 font-semibold'; 
+                return 'text-amber-200'; 
+            };
+
+            const totalTensionKg = strings.reduce((sum, str, index) => {
+                const effMidi = str.baseMidi + pitchShift;
+                const strScale = getScaleForString(index, stringCount);
+                const physics = calculateStringPhysics(effMidi, str.gauge, str.isWound, strScale);
+                return sum + physics.tensionKg;
+            }, 0);
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
+                    <div className="mb-6">
+                        <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-brand-400 to-blue-500 flex items-center">
+                            <svg className="w-8 h-8 mr-3 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            String Tension Calculator
+                        </h1>
+                        <p className="text-slate-400 mt-3 text-sm md:text-base max-w-3xl leading-relaxed">
+                            Precision mathematical model based on D'Addario physical string specs. <br/>
+                            Calculates longitudinal tension, action stiffness on 1st fret, and core-wire resistance for full-step bends.
+                        </p>
+                    </div>
+
+                    {}
+                    <div className="bg-slate-900 rounded-xl p-6 border border-dark-700 shadow-2xl mb-6 relative overflow-hidden flex flex-col md:flex-row items-center justify-between">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-brand-400 to-blue-500"></div>
+                        <div className="text-center md:text-left mb-4 md:mb-0">
+                            <span className="text-sm font-semibold text-slate-400 uppercase tracking-wider block mb-1">Total Guitar Tension</span>
+                            <span className="text-xs text-slate-500">Sum of all longitudinal string forces</span>
+                        </div>
+                        <div className="text-5xl font-bold text-brand-400 tracking-tight">
+                            {totalTensionKg.toFixed(1)} <span className="text-2xl text-slate-500 font-normal">kg</span>
+                        </div>
+                    </div>
+
+                    {}
+                    <div className="bg-dark-800 rounded-xl p-6 border border-dark-700 shadow-xl mb-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">String Count</label>
+                                <select className="select-dark w-full font-semibold" value={stringCount} onChange={e => {
+                                    const c = parseInt(e.target.value);
+                                    let newStrings = [...strings];
+                                    if(c > newStrings.length) {
+                                        for(let i=newStrings.length; i<c; i++) newStrings.push({baseMidi: 40-i*5, gauge: 0.054, isWound: true});
+                                    } else {
+                                        newStrings = newStrings.slice(0, c);
+                                    }
+                                    setStrings(newStrings);
+                                    setStringCount(c);
+                                    setActiveTuningPreset("Custom");
+                                    setActiveGaugePreset("Custom");
+                                }}>
+                                    <option value="6">6 Strings</option>
+                                    <option value="7">7 Strings</option>
+                                    <option value="8">8 Strings</option>
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Scale Type</label>
+                                    <select className="select-dark w-full" value={isMultiscale ? "multi" : "straight"} onChange={e => setIsMultiscale(e.target.value === "multi")}>
+                                        <option value="multi">Multiscale (Fanned)</option>
+                                        <option value="straight">Straight</option>
+                                    </select>
+                                </div>
+                                <div className="flex gap-2">
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Treble (")</label>
+                                        <input type="number" step="0.1" className="input-dark font-mono text-center" value={scaleTreble} onChange={e => setScaleTreble(parseFloat(e.target.value) || 0)} />
+                                    </div>
+                                    {isMultiscale && (
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Bass (")</label>
+                                            <input type="number" step="0.1" className="input-dark font-mono text-center" value={scaleBass} onChange={e => setScaleBass(parseFloat(e.target.value) || 0)} />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex justify-between items-center">
+                                    <span>Global Pitch Shift</span>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => { setPitchShift(p => p - 1); setActiveTuningPreset("Custom"); }} className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded text-white font-bold text-sm">-</button>
+                                        <span className={`w-8 text-center font-mono font-bold ${pitchShift === 0 ? 'text-slate-500' : (pitchShift > 0 ? 'text-brand-400' : 'text-blue-400')}`}>
+                                            {pitchShift > 0 ? `+${pitchShift}` : pitchShift}
+                                        </span>
+                                        <button onClick={() => { setPitchShift(p => p + 1); setActiveTuningPreset("Custom"); }} className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded text-white font-bold text-sm">+</button>
+                                    </div>
+                                </label>
+                                <input type="range" min="-12" max="12" value={pitchShift} onChange={e => { setPitchShift(parseInt(e.target.value)); setActiveTuningPreset("Custom"); }} className="w-full accent-brand-500 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer mt-1" />
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Tuning Presets</label>
+                                {isSavingTuning ? (
+                                    <div className="flex gap-2">
+                                        <input autoFocus type="text" className="input-dark flex-1 text-sm" placeholder="Preset name..." value={newTuningName} onChange={e=>setNewTuningName(e.target.value)} />
+                                        <button className="bg-brand-500 hover:bg-brand-400 text-white px-3 py-1 rounded font-bold" onClick={saveCustomTuning}>Save</button>
+                                        <button className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1 rounded font-bold" onClick={()=>setIsSavingTuning(false)}>X</button>
+                                    </div>
+                                ) : (
+                                    <div className="flex gap-2">
+                                        <select className="select-dark flex-1" value={activeTuningPreset} onChange={e => {
+                                            const val = e.target.value;
+                                            if(val !== "Custom") {
+                                                const tArr = allTunings[val];
+                                                let newStrings = [...strings];
+                                                for(let i=0; i<Math.min(newStrings.length, tArr.length); i++) {
+                                                    // Парсим ноту в MIDI, если она записана строкой в пресете
+                                                    newStrings[i].baseMidi = typeof tArr[i] === 'string' ? parseNoteToMidi(tArr[i]) : tArr[i];
+                                                }
+                                                setStrings(newStrings);
+                                                setPitchShift(0);
+                                            }
+                                            setActiveTuningPreset(val);
+                                        }}>
+                                            <option value="Custom">-- Custom Tuning --</option>
+                                            {Object.keys(customTunings).length > 0 && (
+                                                <optgroup label="Custom Saved">
+                                                    {Object.keys(customTunings).map(k => <option key={k} value={k}>{k}</option>)}
+                                                </optgroup>
+                                            )}
+                                            <optgroup label="Default Presets">
+                                                {Object.keys(DEFAULT_TUNINGS).map(k => <option key={k} value={k}>{k}</option>)}
+                                            </optgroup>
+                                        </select>
+                                        <button className="bg-slate-700 hover:bg-slate-600 text-white px-4 rounded text-lg font-bold transition" title="Save current tuning" onClick={()=>setIsSavingTuning(true)}>+</button>
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Gauge Presets</label>
+                                {isSavingGauge ? (
+                                    <div className="flex gap-2">
+                                        <input autoFocus type="text" className="input-dark flex-1 text-sm" placeholder="Set name..." value={newGaugeName} onChange={e=>setNewGaugeName(e.target.value)} />
+                                        <button className="bg-brand-500 hover:bg-brand-400 text-white px-3 py-1 rounded font-bold" onClick={saveCustomGauge}>Save</button>
+                                        <button className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1 rounded font-bold" onClick={()=>setIsSavingGauge(false)}>X</button>
+                                    </div>
+                                ) : (
+                                    <div className="flex gap-2">
+                                        <select className="select-dark flex-1" value={activeGaugePreset} onChange={e => {
+                                            const val = e.target.value;
+                                            if(val !== "Custom") {
+                                                const gArr = allGauges[val];
+                                                let newStrings = [...strings];
+                                                for(let i=0; i<Math.min(newStrings.length, gArr.length); i++) {
+                                                    newStrings[i].gauge = gArr[i].g;
+                                                    newStrings[i].isWound = gArr[i].w;
+                                                }
+                                                setStrings(newStrings);
+                                            }
+                                            setActiveGaugePreset(val);
+                                        }}>
+                                            <option value="Custom">-- Custom Gauges --</option>
+                                            {Object.keys(customGauges).length > 0 && (
+                                                <optgroup label="Custom Saved">
+                                                    {Object.keys(customGauges).map(k => <option key={k} value={k}>{k}</option>)}
+                                                </optgroup>
+                                            )}
+                                            <optgroup label="Default Presets">
+                                                {sortedGaugePresets.map(([k, _]) => <option key={k} value={k}>{k}</option>)}
+                                            </optgroup>
+                                        </select>
+                                        <button className="bg-slate-700 hover:bg-slate-600 text-white px-4 rounded text-lg font-bold transition" title="Save current gauges" onClick={()=>setIsSavingGauge(true)}>+</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {}
+                    <div className="bg-dark-800 rounded-xl border border-dark-700 shadow-xl overflow-hidden overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[850px]">
+                            <thead>
+                                <tr className="bg-slate-900/80 border-b border-dark-700 text-xs uppercase tracking-wider text-slate-400">
+                                    <th className="p-4 font-semibold text-center w-12">#</th>
+                                    <th className="p-4 font-semibold">Note</th>
+                                    <th className="p-4 font-semibold">Gauge</th>
+                                    <th className="p-4 font-semibold text-center">Scale</th>
+                                    <th className="p-4 font-semibold text-right">
+                                        Tension
+                                        <InfoIcon tooltip="Longitudinal tension force. Affects pick attack and overall tightness." />
+                                    </th>
+                                    <th className="p-4 font-semibold text-right">
+                                        Bend Force 
+                                        <InfoIcon tooltip="Force required to bend the string sideways by exactly 1 WHOLE STEP. Values over 2.7 kg are physically extremely difficult." />
+                                    </th>
+                                    <th className="p-4 font-semibold text-right">
+                                        Action Stiffness
+                                        <InfoIcon tooltip="Force required to press the string down 1mm at the 1st fret. 'Floppy' warning means tension is too low and the string will buzz out." />
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-dark-700/50">
+                                {strings.map((str, index) => {
+                                    const effMidi = str.baseMidi + pitchShift;
+                                    const effNoteIdx = ((effMidi % 12) + 12) % 12; 
+                                    const effOctave = Math.floor(effMidi / 12) - 1;
+                                    
+                                    const strScale = getScaleForString(index, stringCount);
+                                    const physics = calculateStringPhysics(effMidi, str.gauge, str.isWound, strScale);
+                                    const isOverlap = OVERLAP_GAUGES.includes(str.gauge);
+
+                                    return (
+                                        <tr key={index} className="hover:bg-slate-800/80 transition-colors group">
+                                            <td className="p-4 text-center font-mono text-slate-500 font-bold">{index + 1}</td>
+                                            
+                                            {/* Note Selection */}
+                                            <td className="p-4">
+                                                <div className="flex gap-1.5">
+                                                    <select className="select-dark py-1 px-2 text-sm font-semibold" value={effNoteIdx} onChange={e => {
+                                                        const targetNoteIdx = parseInt(e.target.value);
+                                                        const targetMidi = (effOctave + 1) * 12 + targetNoteIdx;
+                                                        handleStringChange(index, 'baseMidi', targetMidi - pitchShift);
+                                                    }}>
+                                                        {NOTE_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)}
+                                                    </select>
+                                                    <select className="select-dark py-1 px-2 text-sm font-mono text-slate-400" value={effOctave} onChange={e => {
+                                                        const targetOctave = parseInt(e.target.value);
+                                                        const targetMidi = (targetOctave + 1) * 12 + effNoteIdx;
+                                                        handleStringChange(index, 'baseMidi', targetMidi - pitchShift);
+                                                    }}>
+                                                        {[-1,0,1,2,3,4,5,6].map(o => <option key={o} value={o}>{o}</option>)}
+                                                    </select>
+                                                </div>
+                                            </td>
+
+                                            {}
+                                            <td className="p-4">
+                                                <div className="flex items-center gap-3">
+                                                    <select className="select-dark py-1 px-2 text-sm font-mono w-20" value={str.gauge} onChange={e => {
+                                                        const g = parseFloat(e.target.value);
+                                                        handleStringChange(index, 'gauge', g);
+                                                        if (!OVERLAP_GAUGES.includes(g)) {
+                                                            handleStringChange(index, 'isWound', g >= 0.020);
+                                                        }
+                                                    }}>
+                                                        <optgroup label="Plain">
+                                                            {PLAIN_GAUGES.map(g => <option key={`p_${g}`} value={g}>{formatGauge(g)}</option>)}
+                                                        </optgroup>
+                                                        <optgroup label="Wound">
+                                                            {WOUND_GAUGES.map(g => <option key={`w_${g}`} value={g}>{formatGauge(g)}</option>)}
+                                                        </optgroup>
+                                                    </select>
+                                                    
+                                                    {/* Custom Plain / Wound Toggle Switch */}
+                                                    <div className="flex items-center" title={isOverlap ? "Toggle String Type (Plain vs Wound)" : "Fixed type for this gauge"}>
+                                                        <div className="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                id={`toggle-${index}`}
+                                                                disabled={!isOverlap}
+                                                                checked={str.isWound}
+                                                                onChange={(e) => handleStringChange(index, 'isWound', e.target.checked)}
+                                                                className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 transition-transform duration-200 ease-in-out border-slate-600"
+                                                            />
+                                                            <label 
+                                                                htmlFor={`toggle-${index}`}
+                                                                className="toggle-label block overflow-hidden h-6 rounded-full bg-slate-600 cursor-pointer"
+                                                            ></label>
+                                                        </div>
+                                                        <span className={`text-xs font-bold w-12 uppercase tracking-wide ${str.isWound ? 'text-brand-400' : 'text-slate-400'} ${!isOverlap && 'opacity-40'}`}>
+                                                            {str.isWound ? 'Wound' : 'Plain'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </td>
+
+                                            <td className="p-4 text-center font-mono text-sm text-slate-400">
+                                                {strScale.toFixed(2)}"
+                                            </td>
+
+                                            {/* Results */}
+                                            <td className="p-4 text-right">
+                                                <div className={`text-lg tracking-tight ${getTensionColor(physics.tensionKg)}`}>
+                                                    {physics.tensionKg.toFixed(1)} <span className="text-xs font-normal opacity-60 ml-0.5">kg</span>
+                                                </div>
+                                                <div className="text-[10px] text-slate-500 font-mono mt-0.5">{physics.tensionLbs.toFixed(1)} lbs</div>
+                                            </td>
+
+                                            <td className="p-4 text-right">
+                                                <div className={`text-base font-mono ${getBendColor(physics.bendKg)}`}>
+                                                    {physics.bendKg.toFixed(2)} <span className="text-xs font-normal opacity-50 ml-0.5">kg</span>
+                                                </div>
+                                            </td>
+
+                                            <td className="p-4 text-right">
+                                                <div className={`text-base font-mono ${getActionColor(physics.actionKg, physics.tensionKg)}`}>
+                                                    {physics.actionKg.toFixed(3)} <span className="text-xs font-normal opacity-50 ml-0.5">kg</span>
+                                                </div>
+                                                {physics.tensionKg < 5.5 && (
+                                                    <div className="text-[10px] text-yellow-500/80 mt-0.5 italic tracking-wide">FLOPPY</div>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
